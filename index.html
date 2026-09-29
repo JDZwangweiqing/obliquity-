@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>黄赤交角与地球五带 3D 模拟</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; font-family:"Microsoft YaHei","PingFang SC",sans-serif; }
+  #app { display:flex; width:100%; height:100%; background:#f7f9fc; }
+  /* ---------- 左侧控制面板 ---------- */
+  #panel {
+    width:250px; min-width:250px; height:100%; overflow-y:auto;
+    background:#ffffff; border-right:1px solid #e3e8f0; padding:18px 16px; z-index:10;
+  }
+  #panel h1 { font-size:17px; color:#2c3e66; text-align:center; margin-bottom:14px; letter-spacing:1px; }
+  .sec { margin-bottom:14px; }
+  .sec-title { font-size:14px; font-weight:bold; color:#2c3e66; margin:10px 0 8px; }
+  label.row { display:flex; justify-content:space-between; font-size:12.5px; color:#556; margin-bottom:4px; }
+  label.row .val { color:#1a9e4b; font-weight:bold; }
+  input[type=range] { width:100%; height:18px; accent-color:#2e9e5b; cursor:pointer; }
+  .checks { display:flex; gap:10px; flex-wrap:wrap; margin-top:6px; }
+  .checks label { font-size:12.5px; color:#445; display:flex; align-items:center; gap:4px; cursor:pointer; }
+  .checks input { accent-color:#4a5fd8; }
+  .btns { display:flex; gap:8px; margin:6px 0; }
+  button.btn {
+    flex:1; padding:8px 0; border:none; border-radius:6px; background:#4a5fd8; color:#fff;
+    font-size:14px; cursor:pointer; transition:background .15s;
+  }
+  button.btn:hover { background:#3a4ec0; }
+  button.btn.icon { font-size:15px; }
+  .seasons { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+  .seasons button { padding:8px 0; border:none; border-radius:6px; background:#7b6ce0; color:#fff; font-size:13.5px; cursor:pointer; }
+  .seasons button:hover { background:#6a59d0; }
+  .seasons button.active { background:#f57c00; font-weight:bold; box-shadow:0 0 0 2px rgba(245,124,0,.3); }
+  /* 五带图例 */
+  #zoneLegend { display:flex; gap:10px; align-items:stretch; margin-top:6px; }
+  #zoneBar {
+    width:34px; border-radius:5px; overflow:hidden; display:flex; flex-direction:column-reverse;
+    border:1px solid #ccd;
+  }
+  #zoneBar div { width:100%; display:flex; align-items:center; justify-content:center; }
+  #zoneInfo { flex:1; font-size:11.5px; color:#445; line-height:1.9; }
+  #zoneInfo b { display:inline-block; padding:1px 6px; border-radius:3px; color:#fff; font-size:10.5px; margin-right:4px; }
+  #info { font-size:12.5px; color:#2c3e66; background:#f0f4ff; border:1px solid #dde5f5; border-radius:6px; padding:8px 10px; line-height:1.9; }
+  #info b { color:#d84315; }
+  .hint { font-size:11px; color:#889; margin-top:10px; line-height:1.6; }
+  /* ---------- 3D 视口 ---------- */
+  #viewport { flex:1; position:relative; }
+  canvas { display:block; }
+  #hud {
+    position:absolute; top:12px; left:14px; font-size:13px; color:#2c3e66;
+    background:rgba(255,255,255,.85); border:1px solid #dde5f5; border-radius:6px; padding:6px 12px;
+    pointer-events:none;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="panel">
+    <h1>黄赤交角与五带变化</h1>
+
+    <div class="sec">
+      <label class="row"><span>黄赤交角 ε</span><span class="val" id="epsVal">23.5°</span></label>
+      <input type="range" id="epsSlider" min="-90" max="90" step="0.5" value="23.5">
+      <label class="row" style="margin-top:6px"><span>输入值</span></label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="number" id="epsInput" min="-90" max="90" step="0.5" value="23.5"
+               style="width:80px;padding:3px 6px;border:1px solid #ccd;border-radius:4px;">
+        <button id="btnRestore" title="恢复页面打开时的参数"
+                style="padding:4px 12px;border:none;border-radius:4px;background:#6b7a99;color:#fff;font-size:12.5px;cursor:pointer;">恢复</button>
+      </div>
+      <label class="row" style="margin-top:8px"><span>地球缩放</span></label>
+      <input type="range" id="scaleSlider" min="0.5" max="1.8" step="0.05" value="1">
+    </div>
+
+    <div class="sec checks">
+      <label><input type="checkbox" id="chkEcliptic" checked> 黄道平面</label>
+      <label><input type="checkbox" id="chkSpin" checked> 自转</label>
+      <label><input type="checkbox" id="chkEquator"> 赤道平面</label>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">公转</div>
+      <div class="btns">
+        <button class="btn icon" id="btnPlay" title="播放">▶</button>
+        <button class="btn icon" id="btnPause" title="暂停">⏸</button>
+        <button class="btn icon" id="btnReset" title="重置">⟲</button>
+      </div>
+      <div class="seasons">
+        <button data-phi="1.5707963">春分</button>
+        <button data-phi="3.1415927">夏至</button>
+        <button data-phi="4.7123890">秋分</button>
+        <button data-phi="0">冬至</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">五带图示　　<label style="display:inline-flex; align-items:center; gap:3px; cursor:pointer; font-weight:bold;"><input type="checkbox" id="chkZoneLabels">标注</label></div>
+      <div id="zoneLegend">
+        <div id="zoneBar"></div>
+        <div id="zoneInfo"></div>
+      </div>
+    </div>
+
+    <div class="sec" id="info"></div>
+    <div class="hint">鼠标左键拖动旋转视角，滚轮缩放。<br>黄道面为基准面（水平），地轴与其法线夹角即黄赤交角 ε；回归线纬度 = ±ε，极圈纬度 = ±(90°−ε)。</div>
+  </div>
+  <div id="viewport">
+    <div id="hud"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  const D2R = Math.PI/180, R2D = 180/Math.PI;
+  const ORBIT_R = 6, EARTH_R = 1;
+
+  /* ================= 场景基础 ================= */
+  const viewport = document.getElementById('viewport');
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf7f9fc);
+
+  // 正投影相机（远小近大效果由标记的按距离缩放保留）
+  let viewSize = 14; // 正交视口高度（世界单位），滚轮调节
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+  camera.position.set(0, 7.5, 14.5);
+  const renderer = new THREE.WebGLRenderer({antialias:true});
+  viewport.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+  const sunLight = new THREE.PointLight(0xffffff, 0.45, 100);
+  scene.add(sunLight); // 位于太阳(原点)
+
+  /* ================= 简易轨道控制 ================= */
+  // 默认视角：位于秋分点方位(+z侧)向太阳看，仰角 15°（极角 75°）
+  const ctrl = { theta: 0, phi: 75*D2R, target: new THREE.Vector3(0,0.4,0) };
+  const CAM_DIST = 16; // 相机距离固定，缩放改由正交视口大小控制
+  let dragging=false, lastX=0, lastY=0;
+  renderer.domElement.addEventListener('mousedown', e=>{ dragging=true; lastX=e.clientX; lastY=e.clientY; });
+  window.addEventListener('mouseup', ()=> dragging=false);
+  window.addEventListener('mousemove', e=>{
+    if(!dragging) return;
+    ctrl.theta -= (e.clientX-lastX)*0.006;
+    // 俯仰视角：仰角 −90° ~ +90°（极角 0 ~ 180°，留极小余量避免视线与上向量重合）
+    ctrl.phi = Math.max(0.01, Math.min(Math.PI-0.01, ctrl.phi - (e.clientY-lastY)*0.006));
+    lastX=e.clientX; lastY=e.clientY;
+  });
+  renderer.domElement.addEventListener('wheel', e=>{
+    e.preventDefault();
+    viewSize = Math.max(5, Math.min(40, viewSize + e.deltaY*0.02));
+  }, {passive:false});
+  function updateCamera(){
+    const aspect = viewport.clientWidth / Math.max(viewport.clientHeight,1);
+    camera.left = -viewSize*aspect/2; camera.right = viewSize*aspect/2;
+    camera.top = viewSize/2; camera.bottom = -viewSize/2;
+    camera.updateProjectionMatrix();
+    camera.position.set(
+      ctrl.target.x + CAM_DIST*Math.sin(ctrl.phi)*Math.sin(ctrl.theta),
+      ctrl.target.y + CAM_DIST*Math.cos(ctrl.phi),
+      ctrl.target.z + CAM_DIST*Math.sin(ctrl.phi)*Math.cos(ctrl.theta));
+    camera.lookAt(ctrl.target);
+  }
+
+  /* ================= 文字 Sprite ================= */
+  const dsSprites = []; // 需要远小近大效果的标记（正投影下手动按距离缩放）
+  function drawLabelContent(c, text, color, bg){
+    const ctx = c.getContext('2d');
+    const font = 'bold 42px "Microsoft YaHei", sans-serif';
+    ctx.font = font;
+    c.width = Math.ceil(ctx.measureText(text).width) + 24;
+    c.height = 64;
+    const ctx2 = c.getContext('2d');
+    ctx2.font = font;
+    if(bg){ // 可选底色圆角矩形，提高在球面上的可读性
+      ctx2.fillStyle = bg;
+      const w=c.width, h=c.height, rad=14;
+      ctx2.beginPath();
+      ctx2.moveTo(rad,2); ctx2.arcTo(w-2,2,w-2,h-2,rad); ctx2.arcTo(w-2,h-2,2,h-2,rad);
+      ctx2.arcTo(2,h-2,2,2,rad); ctx2.arcTo(2,2,w-2,2,rad);
+      ctx2.fill();
+    }
+    ctx2.fillStyle = color; ctx2.textBaseline='middle';
+    ctx2.fillText(text, 12, 34);
+  }
+  function makeLabel(text, color, size, bg){
+    const c = document.createElement('canvas');
+    drawLabelContent(c, text, color, bg);
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, depthTest:true}));
+    sp.userData = {canvas:c, tex, color, bg, size};
+    sp.scale.set(size*c.width/c.height, size, 1);
+    sp.renderOrder = 20;
+    dsSprites.push({sp, sx:sp.scale.x, sy:sp.scale.y});
+    return sp;
+  }
+  // 动态更新标记文字（如 ε 标注随滑动条变化）
+  function setLabel(sp, text){
+    const u = sp.userData;
+    drawLabelContent(u.canvas, text, u.color, u.bg);
+    u.tex.needsUpdate = true;
+    sp.scale.set(u.size*u.canvas.width/u.canvas.height, u.size, 1);
+    const o = dsSprites.find(o=>o.sp===sp);
+    if(o){ o.sx=sp.scale.x; o.sy=sp.scale.y; }
+  }
+
+  /* ================= 太阳与黄道面 ================= */
+  const sun = new THREE.Mesh(new THREE.SphereGeometry(0.45, 32, 24),
+              new THREE.MeshBasicMaterial({color:0xffb300}));
+  scene.add(sun);
+  // 太阳光晕
+  (function(){
+    const c=document.createElement('canvas'); c.width=c.height=128;
+    const g=c.getContext('2d').createRadialGradient(64,64,4,64,64,64);
+    g.addColorStop(0,'rgba(255,200,60,0.9)'); g.addColorStop(1,'rgba(255,200,60,0)');
+    const ctx=c.getContext('2d'); ctx.fillStyle=g; ctx.fillRect(0,0,128,128);
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthWrite:false}));
+    sp.renderOrder = 1; // 光晕在标注之下
+    sp.scale.set(2.6,2.6,1); scene.add(sp);
+  })();
+  const sunLabel = makeLabel('太阳', '#e08800', 0.55); sunLabel.position.set(0,0.9,0); scene.add(sunLabel);
+
+  const eclipticGroup = new THREE.Group(); scene.add(eclipticGroup);
+  // 黄道面半透明圆盘
+  const ecliDisk = new THREE.Mesh(new THREE.CircleGeometry(7.6, 96),
+      new THREE.MeshBasicMaterial({color:0xff9800, transparent:true, opacity:0.07, side:THREE.DoubleSide, depthWrite:false}));
+  ecliDisk.rotation.x = -Math.PI/2; eclipticGroup.add(ecliDisk);
+  // 公转轨道（独立于黄道面组：取消勾选黄道平面时轨道仍显示）
+  const orbitLine = (function(){
+    const pts=[]; for(let i=0;i<=128;i++){const a=i/128*Math.PI*2; pts.push(new THREE.Vector3(ORBIT_R*Math.cos(a),0,ORBIT_R*Math.sin(a)));}
+    const g=new THREE.BufferGeometry().setFromPoints(pts);
+    const line = new THREE.Line(g, new THREE.LineBasicMaterial({color:0xff8c00}));
+    scene.add(line);
+    return line;
+  })();
+  // 黄道面法线（基准垂线）
+  (function(){
+    const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,4.2,0)]);
+    eclipticGroup.add(new THREE.Line(g, new THREE.LineDashedMaterial({color:0x999999, dashSize:0.18, gapSize:0.14})));
+    const l = eclipticGroup.children[eclipticGroup.children.length-1]; l.computeLineDistances();
+  })();
+  const normalLabel = makeLabel('黄道面法线', '#888', 0.42); normalLabel.position.set(0.95,4.35,0); scene.add(normalLabel);
+
+  // 季节位置标签（归入黄道面组：隐藏黄道平面时一并隐藏；z 取反与公转位置公式一致）
+  const seasonPos = { '春分':Math.PI/2, '夏至':Math.PI, '秋分':3*Math.PI/2, '冬至':0 };
+  Object.keys(seasonPos).forEach(name=>{
+    const a = seasonPos[name];
+    const sp = makeLabel(name, '#7b6ce0', 0.55);
+    sp.position.set((ORBIT_R+1.15)*Math.cos(a), 0.15, -(ORBIT_R+1.15)*Math.sin(a));
+    eclipticGroup.add(sp);
+  });
+
+  /* ================= 地球系统 ================= */
+  const earthAnchor = new THREE.Group(); scene.add(earthAnchor); // 公转位置
+  const tiltGroup  = new THREE.Group(); earthAnchor.add(tiltGroup); // 倾角
+  const spinGroup  = new THREE.Group(); tiltGroup.add(spinGroup);   // 自转
+
+  /* ---- 地球贴图：真实海陆影像 + 五带颜色合成（不透明，避免透明叠层破面） ---- */
+  let currentEpsDeg = 23.5;
+  const mapCanvas = document.createElement('canvas');
+  mapCanvas.width = 2048; mapCanvas.height = 1024;
+  const mapCtx = mapCanvas.getContext('2d');
+  const mapTexture = new THREE.CanvasTexture(mapCanvas);
+  mapTexture.anisotropy = 4;
+
+  function paintEarth(){
+    const W=mapCanvas.width, H=mapCanvas.height;
+    const e = currentEpsDeg, p = 90-e, em = Math.min(e,p);
+    const yOf = lat => (90-lat)/180*H;
+    const C_TROP='#ff4232', C_TEMP='#ffd600', C_FRIG='#246cff', C_OVER='#9646d2';
+    const hex2rgb = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+    // 每行纬度对应的五带纯色（海洋区域直接显示该色，与图例一一对应）
+    const rowColor = new Array(H);
+    for(let y=0;y<H;y++){
+      const al = Math.abs(90 - (y+0.5)/H*180);
+      rowColor[y] = hex2rgb(e<=45 ? (al>=p ? C_FRIG : (al>=e ? C_TEMP : C_TROP))
+                                  : (al>=e ? C_FRIG : (al>=p ? C_OVER : C_TROP)));
+    }
+    if(earthImg){
+      // 真实影像仅作海陆掩膜，且置于五带之上：海洋透出五带纯色，陆地灰黑，冰雪白色
+      const tmp = document.createElement('canvas'); tmp.width=W; tmp.height=H;
+      const tctx = tmp.getContext('2d');
+      tctx.drawImage(earthImg, 0, 0, W, H);
+      const img = tctx.getImageData(0,0,W,H), d = img.data;
+      for(let y=0;y<H;y++){
+        const rc = rowColor[y];
+        for(let x=0;x<W;x++){
+          const i=(y*W+x)*4;
+          const r=d[i], g=d[i+1], b=d[i+2];
+          if(r>205 && g>205 && b>205){          // 冰雪
+            d[i]=246; d[i+1]=250; d[i+2]=255;
+          } else if(b>r+6 && b>=g){             // 海洋 → 五带纯色
+            d[i]=rc[0]; d[i+1]=rc[1]; d[i+2]=rc[2];
+          } else {                              // 陆地 → 黄绿色
+            const lum=(r*0.3+g*0.59+b*0.11)/255;
+            const t=Math.min(1,Math.max(0,lum));
+            d[i]=120+t*70; d[i+1]=175+t*55; d[i+2]=50+t*30;
+          }
+        }
+      }
+      mapCtx.putImageData(img,0,0);
+    } else {
+      // 回退：五带纯色打底 + 灰黑大陆色块置于其上
+      for(let y=0;y<H;y++){
+        mapCtx.fillStyle = `rgb(${rowColor[y][0]},${rowColor[y][1]},${rowColor[y][2]})`;
+        mapCtx.fillRect(0,y,W,1);
+      }
+      const xOf = lon => (lon+180)/360*W;
+      const landPoly = pts => {
+        mapCtx.beginPath();
+        pts.forEach(([lo,la],i)=> i? mapCtx.lineTo(xOf(lo),yOf(la)) : mapCtx.moveTo(xOf(lo),yOf(la)));
+        mapCtx.closePath(); mapCtx.fill();
+      };
+      mapCtx.fillStyle = '#9abe45';
+      landPoly([[-165,68],[-120,70],[-85,70],[-60,50],[-80,25],[-100,18],[-110,30],[-140,60]]);   // 北美
+      landPoly([[-80,10],[-60,12],[-35,-8],[-40,-25],[-55,-40],[-70,-30],[-75,-5]]);               // 南美
+      landPoly([[-15,35],[30,37],[50,12],[40,-15],[25,-35],[15,-30],[5,5],[-15,20]]);              // 非洲
+      landPoly([[-10,38],[30,40],[60,40],[90,45],[140,60],[160,65],[140,72],[90,72],[60,68],[30,60],[0,45]]); // 欧亚
+      landPoly([[115,-20],[140,-15],[150,-25],[145,-38],[130,-33],[115,-28]]);                     // 澳洲
+      landPoly([[-45,60],[-20,70],[-30,82],[-55,80]]);                                             // 格陵兰
+    }
+    // 带边界白色细线，增强边界辨识度
+    mapCtx.fillStyle = 'rgba(255,255,255,0.75)';
+    [e,-e,p,-p].forEach(la=>{
+      const y = Math.round(yOf(la));
+      mapCtx.fillRect(0, y-1, W, 2);
+    });
+    mapTexture.needsUpdate = true;
+  }
+  // 加载真实地球影像（多源回退）
+  let earthImg = null;
+  (function loadEarthTexture(){
+    const urls = [
+      'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg',
+      'https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg',
+      'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
+    ];
+    let i=0;
+    (function tryNext(){
+      if(i>=urls.length){ paintEarth(); return; }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = ()=>{ earthImg = img; paintEarth(); };
+      img.onerror = ()=>{ i++; tryNext(); };
+      img.src = urls[i];
+    })();
+  })();
+
+  // 海洋球体（不透明，贴图即含海陆轮廓+五带）
+  const ocean = new THREE.Mesh(new THREE.SphereGeometry(EARTH_R, 64, 48),
+      new THREE.MeshPhongMaterial({map: mapTexture, shininess:6}));
+  spinGroup.add(ocean);
+
+  // 经纬网格（略高于球面，避免与贴图球体深度冲突）
+  (function(){
+    const mat = new THREE.LineBasicMaterial({color:0x4a6fd8, transparent:true, opacity:0.35});
+    const GR = EARTH_R*1.006;
+    const grid = new THREE.Group();
+    for(let lon=0; lon<180; lon+=30){ // 经线
+      const pts=[];
+      for(let i=0;i<=64;i++){const t=i/64*Math.PI*2;
+        pts.push(new THREE.Vector3(GR*Math.cos(t)*Math.cos(lon*D2R), GR*Math.sin(t), GR*Math.cos(t)*Math.sin(lon*D2R)));}
+      grid.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+    }
+    for(let lat=-60; lat<=60; lat+=30){ // 纬线
+      const r=GR*Math.cos(lat*D2R), y=GR*Math.sin(lat*D2R), pts=[];
+      for(let i=0;i<=96;i++){const a=i/96*Math.PI*2; pts.push(new THREE.Vector3(r*Math.cos(a), y, r*Math.sin(a)));}
+      grid.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+    }
+    spinGroup.add(grid);
+  })();
+
+  // 地轴
+  // 地轴（圆柱体代替细线，WebGL 下 Line 不支持线宽）
+  const axisMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.035*EARTH_R, 0.035*EARTH_R, 3.1*EARTH_R, 12),
+      new THREE.MeshBasicMaterial({color:0xd84315}));
+  tiltGroup.add(axisMesh);
+  const northPole = makeLabel('N', '#d84315', 0.3); northPole.position.set(0,1.85*EARTH_R,0); tiltGroup.add(northPole);
+  const southPole = makeLabel('S', '#d84315', 0.3); southPole.position.set(0,-1.85*EARTH_R,0); tiltGroup.add(southPole);
+  // 北极点标记
+  const poleDot = new THREE.Mesh(new THREE.SphereGeometry(0.05,12,8), new THREE.MeshBasicMaterial({color:0xd84315}));
+  poleDot.position.y = EARTH_R; tiltGroup.add(poleDot);
+
+  // 黄道面法线参考线（随地球移动，用于对比夹角）
+  const refLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,1.9*EARTH_R,0)]),
+      new THREE.LineDashedMaterial({color:0x999999, dashSize:0.12, gapSize:0.1}));
+  refLine.computeLineDistances(); earthAnchor.add(refLine);
+
+  // 夹角弧线与 ε 数值标注均已按需求隐藏
+
+  // 赤道平面（垂直于地轴）
+  const equatorGroup = new THREE.Group(); tiltGroup.add(equatorGroup);
+  const eqDisk = new THREE.Mesh(new THREE.CircleGeometry(1.9*EARTH_R, 64),
+      new THREE.MeshBasicMaterial({color:0x2962ff, transparent:true, opacity:0.13, side:THREE.DoubleSide, depthWrite:false}));
+  eqDisk.rotation.x = -Math.PI/2; equatorGroup.add(eqDisk);
+  const eqLabel = makeLabel('赤道平面', '#2962ff', 0.42); eqLabel.position.set(1.6*EARTH_R, 0.12, 1.2*EARTH_R); equatorGroup.add(eqLabel);
+
+  /* ---- 回归线/极圈（五带颜色已画入贴图，不再叠加透明球壳，避免露底破面） ---- */
+  let boundaryLines = []; // 回归线(品红)、极圈(青)
+
+  function latCircle(lat, color){
+    const r = EARTH_R*1.02*Math.cos(lat*D2R), y = EARTH_R*1.02*Math.sin(lat*D2R);
+    const pts=[];
+    for(let i=0;i<=96;i++){const a=i/96*Math.PI*2; pts.push(new THREE.Vector3(r*Math.cos(a), y, r*Math.sin(a)));}
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineDashedMaterial({color, dashSize:0.09, gapSize:0.07}));
+    line.computeLineDistances();
+    return line;
+  }
+  function rebuildBoundaries(eps){
+    boundaryLines.forEach(l=>{ tiltGroup.remove(l); l.geometry.dispose(); });
+    boundaryLines=[];
+    const p = 90-eps; // 极圈纬度
+    // 回归线 ±ε（品红）、极圈 ±(90-ε)（青）
+    boundaryLines = [ latCircle(eps,0xe91e63), latCircle(-eps,0xe91e63),
+                      latCircle(p,0x00bcd4), latCircle(-p,0x00bcd4) ];
+    boundaryLines.forEach(l=>{ l.renderOrder=6; tiltGroup.add(l); });
+  }
+
+  /* ---- 五带名称标记（每帧贴向相机可见一侧，按真实深度遮挡显示） ---- */
+  let zoneLabelMids = [90, 45, 0, -45, -90];
+  const zoneLabels = [['北寒带','#0d47a1'],['北温带','#5d4037'],['热带','#b71c1c'],['南温带','#5d4037'],['南寒带','#0d47a1']]
+    .map(([t,c])=>{
+      const sp = makeLabel(t, c, 0.26, 'rgba(255,255,255,0.82)');
+      tiltGroup.add(sp);
+      return sp;
+    });
+  function updateZoneLabels(eps){
+    const e = Math.abs(eps);
+    const mids = [90-e/2, 45, 0, -45, -(90-e/2)];            // 各带中心纬度
+    const spans = [e, Math.max(0,90-2*e), 2*e, Math.max(0,90-2*e), e]; // 各带纬度跨度
+    zoneLabelMids = mids;
+    zoneLabels.forEach((sp,i)=>{ sp.visible = state.showZoneLabels && spans[i] >= 9; });
+  }
+
+  /* ================= 状态与更新 ================= */
+  const state = {
+    eps: 23.5*D2R,
+    phi: 3*Math.PI/2,        // 默认地球位于秋分点（与默认视角配套）
+    phiTarget: null,
+    playing: false,
+    spin: true,
+    showEcliptic: true,
+    showEquator: false,
+    showZoneLabels: false,   // 五带标注默认隐藏
+    scale: 1,
+  };
+
+  const el = id => document.getElementById(id);
+  const hud = el('hud'), info = el('info');
+
+  function updateEps(newDeg){
+    state.eps = newDeg*D2R;
+    currentEpsDeg = Math.abs(newDeg);           // 五带几何只取决于 |ε|
+    tiltGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),
+        new THREE.Vector3(Math.sin(state.eps), Math.cos(state.eps), 0)); // 倾斜方向随符号翻转
+    rebuildBoundaries(currentEpsDeg);
+    updateZoneLabels(newDeg);
+    paintEarth();
+    // 夹角弧线已隐藏，无需更新
+    el('epsVal').textContent = newDeg + '°';
+    const hasTemperate = 90 - 2*currentEpsDeg > 0;
+    el('zoneInfo').innerHTML =
+      `<b style="background:#ff4232">热带</b> 纬度 −${currentEpsDeg}° ~ +${currentEpsDeg}°<br>`+
+      (hasTemperate
+        ? `<b style="background:#e6b800">温带</b> ±${currentEpsDeg}° ~ ±${(90-currentEpsDeg).toFixed(1)}°<br>`
+        : `<b style="background:#9646d2">重叠区</b> ±${(90-currentEpsDeg).toFixed(1)}° ~ ±${currentEpsDeg}°（温带消失）<br>`)+
+      `<b style="background:#246cff">寒带</b> |纬度| &gt; ${(90-currentEpsDeg).toFixed(1)}°`;
+    // 五带比例条（与球面分区严格对应：|ε|>45° 时热带收窄并出现紫色重叠区）
+    const eB = currentEpsDeg, pB = 90 - eB;
+    const segs = (eB <= 45)
+      ? [[eB,'#246cff'],[90-2*eB,'#ffd600'],[2*eB,'#ff4232'],[90-2*eB,'#ffd600'],[eB,'#246cff']]
+      : [[pB,'#246cff'],[eB-pB,'#9646d2'],[2*pB,'#ff4232'],[eB-pB,'#9646d2'],[pB,'#246cff']];
+    el('zoneBar').innerHTML = segs
+      .filter(([h])=>h>0)
+      .map(([h,c])=>`<div style="height:${(h/180*100).toFixed(2)}%;background:${c}"></div>`)
+      .join('');
+    updateInfo();
+  }
+  function updateInfo(){
+    const epsDeg = state.eps*R2D;
+    // 太阳直射点纬度 δ = asin(n·d)
+    const d = new THREE.Vector3(-Math.cos(state.phi), 0, -Math.sin(state.phi));
+    const n = new THREE.Vector3(Math.sin(state.eps), Math.cos(state.eps), 0);
+    let delta = Math.asin(THREE.MathUtils.clamp(n.dot(d),-1,1))*R2D;
+    const seasonNames=['冬至','春分','夏至','秋分'];
+    // 最近的节气
+    let best=null,bd=1e9;
+    for(const k in seasonPos){ let diff=Math.abs(((state.phi-seasonPos[k])%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI); if(diff<bd){bd=diff;best=k;} }
+    // 高亮当前节气按钮
+    document.querySelectorAll('.seasons button').forEach(b=>{
+      b.classList.toggle('active', best!==null && Math.abs(parseFloat(b.dataset.phi)-seasonPos[best])<0.01);
+    });
+    hud.innerHTML = `黄赤交角 ε = <b>${epsDeg.toFixed(1)}°</b> ｜ 太阳直射点：<b>${delta>=0?'北纬':'南纬'} ${Math.abs(delta).toFixed(1)}°</b> ｜ 近似节气：<b>${best}</b>`;
+    info.innerHTML = `当前直射点纬度：<b>${delta>=0?'+':''}${delta.toFixed(1)}°</b><br>`+
+      `ε 增大 → 热带、寒带范围<b>扩大</b>，温带<b>缩小</b>；<br>ε 减小 → 五带趋于不分；ε = 0 时太阳终年直射赤道。`;
+  }
+
+  /* ================= 交互绑定 ================= */
+  el('epsSlider').addEventListener('input', e=>{
+    el('epsInput').value = e.target.value; updateEps(parseFloat(e.target.value));
+  });
+  el('epsInput').addEventListener('change', e=>{
+    let v = Math.min(45, Math.max(0, parseFloat(e.target.value)||0));
+    e.target.value=v; el('epsSlider').value=v; updateEps(v);
+  });
+  el('scaleSlider').addEventListener('input', e=>{
+    state.scale = parseFloat(e.target.value);
+    tiltGroup.scale.setScalar(state.scale);
+  });
+  el('chkEcliptic').addEventListener('change', e=>{
+    state.showEcliptic = e.target.checked; eclipticGroup.visible = e.target.checked;
+    sunLabel.visible = e.target.checked; normalLabel.visible = e.target.checked;
+    refLine.visible = e.target.checked;
+  });
+  el('chkSpin').addEventListener('change', e=> state.spin = e.target.checked);
+  el('chkEquator').addEventListener('change', e=>{
+    state.showEquator = e.target.checked; equatorGroup.visible = e.target.checked;
+  });
+  el('chkZoneLabels').addEventListener('change', e=>{
+    state.showZoneLabels = e.target.checked;
+    updateZoneLabels(state.eps*R2D);
+  });
+  // 恢复按钮：还原页面打开时的全部参数设置
+  el('btnRestore').addEventListener('click', ()=>{
+    // 黄赤交角与地球缩放
+    el('epsSlider').value = 23.5; el('epsInput').value = 23.5; updateEps(23.5);
+    el('scaleSlider').value = 1; state.scale = 1; tiltGroup.scale.setScalar(1);
+    // 复选项
+    el('chkEcliptic').checked = true; state.showEcliptic = true;
+    eclipticGroup.visible = true; sunLabel.visible = true; normalLabel.visible = true; refLine.visible = true;
+    el('chkSpin').checked = true; state.spin = true;
+    el('chkEquator').checked = false; state.showEquator = false; equatorGroup.visible = false;
+    el('chkZoneLabels').checked = false; state.showZoneLabels = false; updateZoneLabels(23.5);
+    // 公转与视角
+    state.playing = false; state.phiTarget = null; state.phi = 3*Math.PI/2;
+    ctrl.theta = 0; ctrl.phi = 75*D2R; viewSize = 14;
+  });
+  el('btnPlay').addEventListener('click', ()=>{ state.playing=true; state.phiTarget=null; });
+  el('btnPause').addEventListener('click', ()=> state.playing=false);
+  el('btnReset').addEventListener('click', ()=>{
+    state.playing=false; state.phiTarget=null; state.phi=3*Math.PI/2;
+    ctrl.theta=0; ctrl.phi=75*D2R; viewSize=14;
+  });
+  document.querySelectorAll('.seasons button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      state.playing=false;
+      state.phiTarget = parseFloat(b.dataset.phi);
+    });
+  });
+
+  /* ================= 主循环 ================= */
+  function easeToTarget(){
+    if(state.phiTarget===null) return;
+    let diff = state.phiTarget - state.phi;
+    diff = ((diff + Math.PI) % (2*Math.PI) + 2*Math.PI) % (2*Math.PI) - Math.PI; // 最短角差
+    if(Math.abs(diff) < 0.005){ state.phi = state.phiTarget; state.phiTarget=null; }
+    else state.phi += diff*0.12;
+  }
+  const clock = new THREE.Clock();
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    if(state.playing) state.phi += dt*0.5;
+    easeToTarget();
+    // 地球位置（黄道面上，φ 递增时从北极上空看为逆时针 = 正确公转方向）
+    earthAnchor.position.set(ORBIT_R*Math.cos(state.phi), 0, -ORBIT_R*Math.sin(state.phi));
+    // 直射光跟随
+    sunLight.position.copy(earthAnchor.position).multiplyScalar(0.5);
+    if(state.spin) spinGroup.rotation.y += dt*0.8;
+    // ε 标签朝向相机由 Sprite 自动处理
+    // 标记大小 = 基准 × 地球缩放 × 距离因子（温和的远小近大）
+    // 并加"屏幕占比上限"：标注世界高度 ≤ 视口高度的 5%，任何缩放视角下自动缩小，避免相互遮挡
+    const _wp = new THREE.Vector3();
+    const cap = 0.05 * viewSize;
+    dsSprites.forEach(o=>{
+      o.sp.getWorldPosition(_wp);
+      const fDist = THREE.MathUtils.clamp(16 / Math.max(_wp.distanceTo(camera.position), 0.001), 0.75, 1.4);
+      const f = Math.min(fDist * state.scale, cap / o.sy);
+      o.sp.scale.set(o.sx*f, o.sy*f, 1);
+    });
+    // 五带标记每帧贴向相机可见一侧（纬度固定为各带中心），任何视角都不被地球遮挡
+    const _qInv = new THREE.Quaternion().copy(tiltGroup.quaternion).invert();
+    const _camLocal = new THREE.Vector3().copy(camera.position).sub(earthAnchor.position).applyQuaternion(_qInv);
+    const lonCam = Math.atan2(_camLocal.z, _camLocal.x);
+    zoneLabels.forEach((sp,i)=>{
+      if(!sp.visible) return;
+      const lat = zoneLabelMids[i]*D2R, r = 1.32;
+      sp.position.set(r*Math.cos(lat)*Math.cos(lonCam), r*Math.sin(lat), r*Math.cos(lat)*Math.sin(lonCam));
+    });
+    updateCamera();
+    renderer.render(scene, camera);
+    if(Math.floor(clock.elapsedTime*4)%2===0) updateInfo(); // 低频刷新
+  }
+
+  function resize(){
+    const w = viewport.clientWidth, h = viewport.clientHeight;
+    renderer.setSize(w,h); renderer.setPixelRatio(window.devicePixelRatio);
+    updateCamera();
+  }
+  window.addEventListener('resize', resize);
+
+  /* ================= 启动 ================= */
+  resize();
+  updateEps(23.5);
+  el('chkEquator').checked=false; equatorGroup.visible=false;
+  animate();
+})();
+</script>
+</body>
+</html>
